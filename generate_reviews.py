@@ -3,9 +3,13 @@ import os
 from bs4 import BeautifulSoup
 import datetime
 
-# === YOUR KEYS ===
-GROQ_API_KEY = "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"  # Put your real Groq key
-AFFILIATE_TAG = "snapxacc-20"        # Your Amazon tag
+# === SECURE KEY HANDLING ===
+# Key comes from GitHub Secrets (or local environment for testing)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY is not set. Add it as a GitHub secret or set it locally for testing.")
+
+AFFILIATE_TAG = os.getenv("AFFILIATE_TAG", "snapxacc-20")  # fallback if not set as secret
 
 SITE_DIR = "."
 REVIEWS_DIR = os.path.join(SITE_DIR, "reviews")
@@ -74,8 +78,7 @@ def generate_review(product_name, search_term, why_trending):
             <p>Published {datetime.date.today()}</p>
         </header>
         <main>
-            <!-- Optional: Add a placeholder image later -->
-            <div style="background:#eee;height:400px;margin:30px 0;border-radius:12px;text-align:center;padding-top:180px;color:#999;">
+            <div style="background:#eee;height:400px;margin:30px 0;border-radius:12px;text-align:center;padding-top:180px;color:#999;font-size:1.2rem;">
                 Product Image/Video Here
             </div>
             {content}
@@ -87,19 +90,19 @@ def generate_review(product_name, search_term, why_trending):
     </div>
 </body>
 </html>"""
-    with open(filepath, "w") as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         f.write(html)
     return filename, product_name
 
 def update_homepage(new_reviews):
     homepage = os.path.join(SITE_DIR, "index.html")
-    with open(homepage, "r") as f:
+    with open(homepage, "r", encoding="utf-8") as f:
         soup = BeautifulSoup(f.read(), "html.parser")
     grid = soup.find("div", id="reviews")
     for filename, name in reversed(new_reviews):  # newest on top
         card = soup.new_tag("div", attrs={"class": "review-card"})
-        img_placeholder = soup.new_tag("div", style="background:#eee;height:400px;border-radius:12px;")
-        card.append(img_placeholder)
+        placeholder = soup.new_tag("div", style="background:#eee;height:400px;border-radius:12px;")
+        card.append(placeholder)
         h2 = soup.new_tag("h2")
         h2.string = name
         card.append(h2)
@@ -110,7 +113,7 @@ def update_homepage(new_reviews):
         a.string = "Read Full Review"
         card.append(a)
         grid.insert(0, card)
-    with open(homepage, "w") as f:
+    with open(homepage, "w", encoding="utf-8") as f:
         f.write(str(soup.prettify()))
 
 # === RUN IT ===
@@ -122,4 +125,4 @@ for name, term, trending in products:
     print(f"Created: {title}")
 
 update_homepage(new_reviews)
-print("All done! Commit & push to GitHub – your site is now live with new reviews.")
+print("All done! Commit & push – your site will update automatically.")
