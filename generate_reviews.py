@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 import datetime
 
 # === YOUR KEYS ===
-GROQ_API_KEY = "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"  # Put your real Groq key
+GROQ_API_KEY = "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"  # Put your real Groq key
 AFFILIATE_TAG = "snapxacc-20"        # Your Amazon tag
 
 SITE_DIR = "."
