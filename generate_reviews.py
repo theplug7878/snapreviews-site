@@ -4,10 +4,10 @@ from bs4 import BeautifulSoup
 import datetime
 import re
 
-# === SECURE KEYS (never exposed) ===
+# === SECURE KEY HANDLING ===
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
-    raise ValueError("Set GROQ_API_KEY as a GitHub secret")
+    raise ValueError("GROQ_API_KEY is not set. Add it as a GitHub secret or set it locally for testing.")
 
 AFFILIATE_TAG = os.getenv("AFFILIATE_TAG", "snapxacc-20")
 
@@ -30,48 +30,50 @@ def generate_with_groq(prompt):
     print("Groq error:", resp.text)
     return ""
 
-def get_trending_products():
-    prompt = """
-    Give me 5 completely different trending Amazon products right now (December 2025). 
-    Mix categories: gadgets, beauty, kitchen, home, fitness, etc.
-    Format exactly:
-    Product Name | Amazon Search Term (4-8 words)
+def get_trending_products(num=5):
+    prompt = f"""
+    Give exactly {num} completely different trending Amazon products right now (December 2025). Mix categories: gadgets, beauty, kitchen, cozy, fitness.
+    NEVER number them. Format ONLY:
+    Product Name | Amazon Search Term (exact, 4-8 words) | Why It's Trending (1-2 sentences)
     Example:
-    Cordless Water Flosser | cordless water flosser for teeth
+    Ninja Air Fryer | ninja air fryer max xl | Viral on TikTok for oil-free cooking...
     """
     response = generate_with_groq(prompt)
     products = []
     for line in response.split("\n"):
-        if "|" in line:
-            parts = [p.strip() for p in line.split("|", 1)]
-            if len(parts) == 2:
+        if "|" in line and not line.strip().startswith(("1.", "2.", "3.", "4.", "5.", "-")):
+            parts = [p.strip() for p in line.split("|", 2)]
+            if len(parts) == 3:
                 products.append(parts)
-    return products[:5]  # Force exactly 5
+    return products[:num]
 
-def get_google_product_image(product_name):
-    query = f"{product_name} official product photo site:amazon.com OR site:target.com OR site:walmart.com"
+def get_real_product_image(product_name):
+    # Simple Google Images scrape for real product photo
+    query = f"{product_name} official product photo amazon"
     url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbm=isch"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(resp.text, "html.parser")
-        img = soup.find("img", src=re.compile(r"https://m.media-amazon.com/images/I/|https://images-na.ssl-images-amazon.com/images/I/"))
+        img = soup.find("img", src=re.compile(r"m.media-amazon.com"))
         if img and img.get("src"):
             return img["src"]
     except:
         pass
-    # Fallback placeholder
+    # Fallback beautiful placeholder
     return f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={product_name.replace(' ', '+')}"
 
-def generate_review(product_name, search_term):
+def generate_review(product_name, search_term, why_trending):
     link = f"https://www.amazon.com/s?k={search_term.replace(' ', '+')}&tag={AFFILIATE_TAG}"
-    image_url = get_google_product_image(product_name)
+    image_url = get_real_product_image(product_name)
 
     prompt = f"""
-    Write a fun, honest 800-1200 word review for the Amazon product "{product_name}" as if from @snapreviews_.
-    Style: casual, satisfying, real opinions.
-    Sections with <h2>: Why It's Trending, Pros & Cons, Features, Verdict.
-    End with a big blue button link to {link}
+    Write a full 800-1200 word SEO-optimized review for "{product_name}" in December 2025.
+    Style: honest, fun, satisfying like @snapreviews_.
+    Sections with <h2>: Why It's Trending, Pros & Cons (bullets), Features, Who It's For, Verdict.
+    Include: {why_trending}
+    End with a big blue button link to {link}.
+    NEVER number anything in the title or content.
     """
     content = generate_with_groq(prompt)
 
@@ -130,13 +132,13 @@ def update_homepage(new_reviews):
     with open(homepage, "w", encoding="utf-8") as f:
         f.write(str(soup.prettify()))
 
-# === MAIN ===
-products = get_trending_products()
+# === RUN IT ===
+products = get_trending_products(5)
 new_reviews = []
-for name, term in products:
-    filename, title, img = generate_review(name, term)
+for name, term, trending in products:
+    filename, title, img = generate_review(name, term, trending)
     new_reviews.append((filename, title, img))
     print(f"Created: {title}")
 
 update_homepage(new_reviews)
-print("All done! Commit & push – your site now has 5 unique products with real images.")
+print("All done! Commit & push – real product images and no numbers!")
