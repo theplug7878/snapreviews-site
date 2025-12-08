@@ -1,22 +1,24 @@
 import os
-from bs4 import BeautifulSoup
+import requests
 import datetime
+from bs4 import BeautifulSoup
 from amazon_paapi import AmazonApi
 
-# === SECURE CREDENTIALS (from GitHub Secrets) ===
-ACCESS_KEY = os.getenv("PA_ACCESS_KEY")
-SECRET_KEY = os.getenv("PA_SECRET_KEY")
-PARTNER_TAG = os.getenv("AFFILIATE_TAG", "snapxacc-20")
+# === SECURE KEYS FROM GITHUB SECRETS ===
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+PA_ACCESS_KEY = os.getenv("PA_ACCESS_KEY")
+PA_SECRET_KEY = os.getenv("PA_SECRET_KEY")
+AFFILIATE_TAG = os.getenv("AFFILIATE_TAG", "snapxacc-20")
 
-if not ACCESS_KEY or not SECRET_KEY:
-    raise ValueError("PA API credentials not set in GitHub secrets")
+if not all([GROQ_API_KEY, PA_ACCESS_KEY, PA_SECRET_KEY]):
+    raise ValueError("Missing required secrets")
 
+# Amazon PA API
 amazon = AmazonApi(
-    key=ACCESS_KEY,
-    secret=SECRET_KEY,
-    tag=PARTNER_TAG,
-    country="US",  # Change if you're in another marketplace
-    throttling=1.0  # 1 request per second to stay safe
+    key=PA_ACCESS_KEY,
+    secret=PA_SECRET_KEY,
+    tag=AFFILIATE_TAG,
+    country="US"
 )
 
 SITE_DIR = "."
@@ -24,29 +26,41 @@ REVIEWS_DIR = os.path.join(SITE_DIR, "reviews")
 os.makedirs(REVIEWS_DIR, exist_ok=True)
 
 def generate_with_groq(prompt):
-    # Your existing Groq code here (unchanged)
-    # ... keep your current generate_with_groq function ...
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 1500,
+        "temperature": 0.7
+    }
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    resp = requests.post(url, json=payload, headers=headers)
+    if resp.status_code == 200:
+        return resp.json()["choices"][0]["message"]["content"].strip()
+    print("Groq error:", resp.text)
+    return "Review content could not be generated."
 
 def get_trending_products(num=5):
     prompt = f"""
-    Give exactly {num} completely different trending Amazon products right now (December 2025). Mix categories: gadgets, beauty, kitchen, cozy, fitness.
+    Give exactly {num} completely different trending Amazon products right now (December 2025).
+    Mix categories (gadgets, beauty, kitchen, cozy, fitness, etc.).
     NEVER number them. Format ONLY:
-    Product Name | Amazon Search Term (exact, 4-8 words) | Why It's Trending (1-2 sentences)
+    Product Name | Amazon Search Term (4-8 words)
     Example:
-    Ninja Air Fryer | ninja air fryer max xl | Viral on TikTok for oil-free cooking...
+    Cordless Water Flosser | cordless water flosser
     """
     response = generate_with_groq(prompt)
     products = []
     for line in response.split("\n"):
         line = line.strip()
         if "|" in line and not line[0].isdigit() and not line.startswith(("-", "•", "*")):
-            parts = [p.strip() for p in line.split("|", 2)]
-            if len(parts) == 3:
+            parts = [p.strip() for p in line.split("|", 1)]
+            if len(parts) == 2:
                 products.append(parts)
     return products[:num]
 
-def generate_review(product_name, search_term, why_trending):
-    # Search Amazon for the product
+def generate_review(product_name, search_term):
+    # Get real product data from PA API
     try:
         result = amazon.search_items(keywords=search_term, item_count=1)
         item = result.items[0] if result.items else None
@@ -56,24 +70,23 @@ def generate_review(product_name, search_term, why_trending):
 
     if item:
         title = item.item_info.title.display_value if item.item_info.title else product_name
-        image_url = item.images.primary.large.url if item.images.primary.large else f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={product_name.replace(' ', '+')}"
-        direct_link = item.detail_page_url  # Already has your affiliate tag
+        image_url = item.images.primary.large.url if item.images.primary.large else "https://via.placeholder.com/800x600/0d6efd/ffffff.png?text=No+Image"
+        direct_link = item.detail_page_url
     else:
         title = product_name
-        image_url = f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={product_name.replace(' ', '+')}"
+        image_url = "https://via.placeholder.com/800x600/0d6efd/ffffff.png?text=No+Image"
         direct_link = f"https://www.amazon.com/s?k={search_term.replace(' ', '+')}&tag={AFFILIATE_TAG}"
 
+    # Generate review text with Groq
     prompt = f"""
-    Write a full 800-1200 word SEO-optimized review for "{title}" in December 2025.
-    Style: honest, fun, satisfying like @snapreviews_.
+    Write a fun, honest 800-1200 word review for the Amazon product "{title}" as @snapreviews_.
     Sections with <h2>: Why It's Trending, Pros & Cons (bullets), Features, Who It's For, Verdict.
-    Include: {why_trending}
     End with a big blue button link to {direct_link}.
-    NEVER number anything in the title or content.
+    NEVER number anything.
     """
     content = generate_with_groq(prompt)
 
-    filename = f"{title.lower()[:100].replace(' ', '-').replace('/', '-')}.html"  # Safe filename
+    filename = f"{title.lower()[:100].replace(' ', '-').replace('/', '-')}.html"
     filepath = os.path.join(REVIEWS_DIR, filename)
 
     html = f"""<!DOCTYPE html>
@@ -128,13 +141,13 @@ def update_homepage(new_reviews):
     with open(homepage, "w", encoding="utf-8") as f:
         f.write(str(soup.prettify()))
 
-# === RUN IT ===
+# === RUN ===
 products = get_trending_products(5)
 new_reviews = []
-for name, term, trending in products:
-    filename, title, img = generate_review(name, term, trending)
+for name, term in products:
+    filename, title, img = generate_review(name, term)
     new_reviews.append((filename, title, img))
     print(f"Created: {title}")
 
 update_homepage(new_reviews)
-print("All done! Commit & push – your site now has real Amazon product images and direct links.")
+print("All done! Commit & push – real Amazon images and direct links are now live.")
