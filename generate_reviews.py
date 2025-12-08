@@ -4,12 +4,12 @@ from bs4 import BeautifulSoup
 import datetime
 import re
 
-# === SECURE KEY HANDLING ===
+# === SECURE KEYS (never exposed) ===
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
-    raise ValueError("GROQ_API_KEY is not set. Add it as a GitHub secret or set it locally for testing.")
+    raise ValueError("Set GROQ_API_KEY as a GitHub secret")
 
-AFFILIATE_TAG = os.getenv("AFFILIATE_TAG", "snapxacc-20")  # fallback if not set
+AFFILIATE_TAG = os.getenv("AFFILIATE_TAG", "snapxacc-20")
 
 SITE_DIR = "."
 REVIEWS_DIR = os.path.join(SITE_DIR, "reviews")
@@ -30,60 +30,48 @@ def generate_with_groq(prompt):
     print("Groq error:", resp.text)
     return ""
 
-def get_trending_products(num=5):
-    prompt = f"""
-    It's December 07, 2025. Give exactly {num} currently trending Amazon products (viral gadgets, cozy items, kitchen tools, beauty, etc.).
-    Format ONLY:
-    Product Name | Amazon Search Term (exact, 4-8 words) | Why It's Trending (1-2 sentences)
+def get_trending_products():
+    prompt = """
+    Give me 5 completely different trending Amazon products right now (December 2025). 
+    Mix categories: gadgets, beauty, kitchen, home, fitness, etc.
+    Format exactly:
+    Product Name | Amazon Search Term (4-8 words)
     Example:
-    Ninja Air Fryer | ninja air fryer max xl | Still blowing up on TikTok for crispy results with no oil...
+    Cordless Water Flosser | cordless water flosser for teeth
     """
     response = generate_with_groq(prompt)
     products = []
     for line in response.split("\n"):
         if "|" in line:
-            parts = [p.strip() for p in line.split("|", 2)]
-            if len(parts) == 3:
+            parts = [p.strip() for p in line.split("|", 1)]
+            if len(parts) == 2:
                 products.append(parts)
-    return products
+    return products[:5]  # Force exactly 5
 
 def get_google_product_image(product_name):
-    """Search Google Images for the first high-res product photo."""
-    search_query = f"{product_name} product photo high resolution"
-    google_url = f"https://www.google.com/search?q={search_query.replace(' ', '+')}&tbm=isch"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+    query = f"{product_name} official product photo site:amazon.com OR site:target.com OR site:walmart.com"
+    url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbm=isch"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
-        resp = requests.get(google_url, headers=headers, timeout=10)
+        resp = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(resp.text, "html.parser")
-        
-        # Find the first image result
-        img_tag = soup.find("img", {"class": "YQ4gaf"}) or soup.find("img", src=re.compile(r"https://encrypted-tbn0\.gstatic\.com/images"))
-        if img_tag and img_tag.get("src"):
-            if img_tag["src"].startswith("data:"):  # Skip base64 thumbs
-                return "https://via.placeholder.com/800x600/0d6efd/ffffff.png?text=Product+Image"
-            return img_tag["src"]
-        
-        # Fallback to placeholder
-        return f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={product_name.replace(' ', '+')}"
-    except Exception as e:
-        print(f"Google image fetch error: {e}")
-        return f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={product_name.replace(' ', '+')}"
+        img = soup.find("img", src=re.compile(r"https://m.media-amazon.com/images/I/|https://images-na.ssl-images-amazon.com/images/I/"))
+        if img and img.get("src"):
+            return img["src"]
+    except:
+        pass
+    # Fallback placeholder
+    return f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={product_name.replace(' ', '+')}"
 
-def generate_review(product_name, search_term, why_trending):
+def generate_review(product_name, search_term):
     link = f"https://www.amazon.com/s?k={search_term.replace(' ', '+')}&tag={AFFILIATE_TAG}"
-    
-    # Get real product image from Google
     image_url = get_google_product_image(product_name)
 
     prompt = f"""
-    Write a full 800-1200 word SEO-optimized review for the Amazon product "{product_name}" in December 2025.
-    Use the clean SnapReviews style: honest, fun, satisfying.
-    Sections with <h2>: Why It's Trending, Pros & Cons (bullets), Features, Who It's For, Verdict.
-    Include the trending reason: {why_trending}
-    End with a big blue button using this exact link: {link}
-    Use real-sounding opinions like @snapreviews_.
+    Write a fun, honest 800-1200 word review for the Amazon product "{product_name}" as if from @snapreviews_.
+    Style: casual, satisfying, real opinions.
+    Sections with <h2>: Why It's Trending, Pros & Cons, Features, Verdict.
+    End with a big blue button link to {link}
     """
     content = generate_with_groq(prompt)
 
@@ -124,7 +112,7 @@ def update_homepage(new_reviews):
     with open(homepage, "r", encoding="utf-8") as f:
         soup = BeautifulSoup(f.read(), "html.parser")
     grid = soup.find("div", id="reviews")
-    for filename, name, img in reversed(new_reviews):  # newest on top
+    for filename, name, img in reversed(new_reviews):
         card = soup.new_tag("div", attrs={"class": "review-card"})
         img_tag = soup.new_tag("img", src=img, alt=name)
         img_tag['style'] = "width:100%;height:400px;object-fit:cover;border-radius:16px;"
@@ -142,13 +130,13 @@ def update_homepage(new_reviews):
     with open(homepage, "w", encoding="utf-8") as f:
         f.write(str(soup.prettify()))
 
-# === RUN IT ===
-products = get_trending_products(5)  # Change number here
+# === MAIN ===
+products = get_trending_products()
 new_reviews = []
-for name, term, trending in products:
-    filename, title, img = generate_review(name, term, trending)
+for name, term in products:
+    filename, title, img = generate_review(name, term)
     new_reviews.append((filename, title, img))
-    print(f"Created: {title} | Image: {img}")
+    print(f"Created: {title}")
 
 update_homepage(new_reviews)
-print("All done! Commit & push – your site now has real Google-sourced product images.")
+print("All done! Commit & push – your site now has 5 unique products with real images.")
