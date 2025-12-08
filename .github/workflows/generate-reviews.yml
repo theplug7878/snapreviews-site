@@ -2,20 +2,25 @@ name: Generate Daily Reviews
 
 on:
   schedule:
-    - cron: '0 12 * * *'  # Every day at 12 UTC
+    - cron: '0 12 * * *'  # Runs every day at 12 UTC
   workflow_dispatch:
 
 jobs:
   generate:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Install dependencies
         run: pip install requests beautifulsoup4
+
       - name: Generate reviews
         env:
           PA_ACCESS_KEY: ${{ secrets.PA_ACCESS_KEY }}
@@ -23,10 +28,13 @@ jobs:
           AFFILIATE_TAG: ${{ secrets.AFFILIATE_TAG }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python generate_reviews.py
+
       - name: Commit and push if changed
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add -A
-          git diff --quiet && git diff --staged --quiet || git commit -m "Auto new reviews $(date +'%Y-%m-%d')"
-          git push
+          if ! git diff --quiet || ! git diff --staged --quiet; then
+            git commit -m "Auto new reviews $(date +'%Y-%m-%d')"
+            git push
+          fi
