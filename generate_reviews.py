@@ -2,6 +2,7 @@ import requests
 import os
 from bs4 import BeautifulSoup
 import datetime
+import re
 
 # === SECURE KEY HANDLING ===
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -32,7 +33,8 @@ def generate_with_groq(prompt):
 def get_trending_products(num=5):
     prompt = f"""
     Give exactly {num} completely different trending Amazon products right now (December 2025). Mix categories: gadgets, beauty, kitchen, cozy, fitness.
-    NEVER number them. Format ONLY:
+    NEVER number them. NEVER use dashes or bullets at the start.
+    Format ONLY:
     Product Name | Amazon Search Term (exact, 4-8 words) | Why It's Trending (1-2 sentences)
     Example:
     Ninja Air Fryer | ninja air fryer max xl | Viral on TikTok for oil-free cooking...
@@ -40,31 +42,29 @@ def get_trending_products(num=5):
     response = generate_with_groq(prompt)
     products = []
     for line in response.split("\n"):
-        if "|" in line and not line.strip().startswith(("1.", "2.", "3.", "4.", "5.", "-")):
+        line = line.strip()
+        if "|" in line and not line[0].isdigit() and not line.startswith(("-", "•", "*")):
             parts = [p.strip() for p in line.split("|", 2)]
             if len(parts) == 3:
                 products.append(parts)
     return products[:num]
 
 def get_real_product_image(product_name):
-    """Grab the first high-quality product photo from Google Images (reliable & looks like X cards)."""
+    """Grab a real high-quality product photo from Google Images."""
     query = f"{product_name} official product photo amazon"
     google_url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbm=isch"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         resp = requests.get(google_url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, "html.parser")
-        
-        # Find the first real image result (usually the official Amazon photo)
-        img = soup.find("img", {"class": "YQ4gaf"}) or soup.find("img", src=re.compile(r"https://m.media-amazon.com/images/I/"))
+        # First real image result (usually the official Amazon photo)
+        img = soup.find("img", {"class": "YQ4gaf"}) or soup.find("img", src=re.compile(r"m.media-amazon.com"))
         if img and img.get("src") and not img["src"].startswith("data:"):
             return img["src"]
     except Exception as e:
         print(f"Image fetch error for {product_name}: {e}")
     
-    # Fallback beautiful placeholder
+    # Beautiful fallback placeholder (fixed URL)
     return f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={product_name.replace(' ', '+')}"
 
 def generate_review(product_name, search_term, why_trending):
@@ -145,4 +145,4 @@ for name, term, trending in products:
     print(f"Created: {title}")
 
 update_homepage(new_reviews)
-print("All done! Commit & push – real Google-sourced product images now load perfectly.")
+print("All done! Commit & push – your site now has real product images that load correctly.")
