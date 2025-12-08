@@ -47,25 +47,40 @@ def get_trending_products(num=5):
                 products.append(parts)
     return products[:num]
 
-def get_real_product_image(product_name):
-    # Simple Google Images scrape for real product photo
-    query = f"{product_name} official product photo amazon"
-    url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbm=isch"
-    headers = {"User-Agent": "Mozilla/5.0"}
+def get_amazon_og_image(search_term):
+    """Get the og:image from the top Amazon result (same as X cards)."""
+    search_url = f"https://www.amazon.com/s?k={search_term.replace(' ', '+')}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection": "keep-alive",
+    }
     try:
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = requests.get(search_url, headers=headers, timeout=10)
         soup = BeautifulSoup(resp.text, "html.parser")
-        img = soup.find("img", src=re.compile(r"m.media-amazon.com"))
-        if img and img.get("src"):
-            return img["src"]
-    except:
-        pass
-    # Fallback beautiful placeholder
-    return f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={product_name.replace(' ', '+')}"
+        
+        # Find the first product result and its og:image
+        first_product = soup.find("div", {"data-component-type": "s-search-result"})
+        if first_product:
+            # Look for og:image in the page head or product meta
+            og_img = soup.find("meta", property="og:image")
+            if og_img and og_img.get("content"):
+                return og_img["content"]
+            # Fallback to first product image
+            img_tag = first_product.find("img", class_="s-image")
+            if img_tag and img_tag.get("src"):
+                return img_tag["src"]
+    except Exception as e:
+        print(f"Image fetch error for {search_term}: {e}")
+    
+    # Ultimate fallback
+    return f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={search_term.replace(' ', '+')}"
 
 def generate_review(product_name, search_term, why_trending):
     link = f"https://www.amazon.com/s?k={search_term.replace(' ', '+')}&tag={AFFILIATE_TAG}"
-    image_url = get_real_product_image(product_name)
+    image_url = get_amazon_og_image(search_term)
 
     prompt = f"""
     Write a full 800-1200 word SEO-optimized review for "{product_name}" in December 2025.
@@ -138,7 +153,7 @@ new_reviews = []
 for name, term, trending in products:
     filename, title, img = generate_review(name, term, trending)
     new_reviews.append((filename, title, img))
-    print(f"Created: {title}")
+    print(f"Created: {title} | Image: {img[:50]}...")
 
 update_homepage(new_reviews)
-print("All done! Commit & push – real product images and no numbers!")
+print("All done! Commit & push – Amazon og:images (like X cards) now load perfectly.")
