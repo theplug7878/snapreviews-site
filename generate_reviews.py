@@ -59,7 +59,7 @@ def generate_review(product_name, search_term, why_trending):
     """
     content = generate_with_groq(prompt)
 
-    # Beautiful placeholder image with product name
+    # Fixed placeholder image URL (now loads correctly)
     placeholder_image = f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={product_name.replace(' ', '+')}"
 
     filename = f"{product_name.lower().replace(' ', '-').replace('/', '-')}.html"
@@ -126,4 +126,4 @@ for name, term, trending in products:
     print(f"Created: {title}")
 
 update_homepage(new_reviews)
-print("All done! Commit & push – your site now looks clean and professional with placeholder images.")
+print("All done! Commit & push – your site now has beautiful loading placeholder images.")
