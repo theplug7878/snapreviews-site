@@ -2,6 +2,7 @@ import requests
 import os
 from bs4 import BeautifulSoup
 import datetime
+import re
 
 # === SECURE KEY HANDLING ===
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -46,8 +47,35 @@ def get_trending_products(num=5):
                 products.append(parts)
     return products
 
+def get_google_product_image(product_name):
+    """Search Google Images for the first high-res product photo."""
+    search_query = f"{product_name} product photo high resolution"
+    google_url = f"https://www.google.com/search?q={search_query.replace(' ', '+')}&tbm=isch"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    try:
+        resp = requests.get(google_url, headers=headers, timeout=10)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        
+        # Find the first image result
+        img_tag = soup.find("img", {"class": "YQ4gaf"}) or soup.find("img", src=re.compile(r"https://encrypted-tbn0\.gstatic\.com/images"))
+        if img_tag and img_tag.get("src"):
+            if img_tag["src"].startswith("data:"):  # Skip base64 thumbs
+                return "https://via.placeholder.com/800x600/0d6efd/ffffff.png?text=Product+Image"
+            return img_tag["src"]
+        
+        # Fallback to placeholder
+        return f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={product_name.replace(' ', '+')}"
+    except Exception as e:
+        print(f"Google image fetch error: {e}")
+        return f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={product_name.replace(' ', '+')}"
+
 def generate_review(product_name, search_term, why_trending):
     link = f"https://www.amazon.com/s?k={search_term.replace(' ', '+')}&tag={AFFILIATE_TAG}"
+    
+    # Get real product image from Google
+    image_url = get_google_product_image(product_name)
 
     prompt = f"""
     Write a full 800-1200 word SEO-optimized review for the Amazon product "{product_name}" in December 2025.
@@ -58,9 +86,6 @@ def generate_review(product_name, search_term, why_trending):
     Use real-sounding opinions like @snapreviews_.
     """
     content = generate_with_groq(prompt)
-
-    # Fixed placeholder image URL (now loads correctly)
-    placeholder_image = f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={product_name.replace(' ', '+')}"
 
     filename = f"{product_name.lower().replace(' ', '-').replace('/', '-')}.html"
     filepath = os.path.join(REVIEWS_DIR, filename)
@@ -80,7 +105,7 @@ def generate_review(product_name, search_term, why_trending):
             <p>Published {datetime.date.today()}</p>
         </header>
         <main>
-            <img src="{placeholder_image}" alt="{product_name}" style="width:100%;max-width:800px;border-radius:16px;margin:30px 0;box-shadow:0 8px 30px rgba(0,0,0,0.15);">
+            <img src="{image_url}" alt="{product_name}" style="width:100%;max-width:800px;border-radius:16px;margin:30px 0;box-shadow:0 8px 30px rgba(0,0,0,0.15);">
             {content}
             <a href="{link}" class="btn" rel="nofollow">Check Price on Amazon →</a>
         </main>
@@ -92,7 +117,7 @@ def generate_review(product_name, search_term, why_trending):
 </html>"""
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(html)
-    return filename, product_name, placeholder_image
+    return filename, product_name, image_url
 
 def update_homepage(new_reviews):
     homepage = os.path.join(SITE_DIR, "index.html")
@@ -123,7 +148,7 @@ new_reviews = []
 for name, term, trending in products:
     filename, title, img = generate_review(name, term, trending)
     new_reviews.append((filename, title, img))
-    print(f"Created: {title}")
+    print(f"Created: {title} | Image: {img}")
 
 update_homepage(new_reviews)
-print("All done! Commit & push – your site now has beautiful loading placeholder images.")
+print("All done! Commit & push – your site now has real Google-sourced product images.")
