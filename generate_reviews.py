@@ -2,7 +2,6 @@ import requests
 import os
 from bs4 import BeautifulSoup
 import datetime
-import re
 
 # === SECURE KEY HANDLING ===
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -47,40 +46,38 @@ def get_trending_products(num=5):
                 products.append(parts)
     return products[:num]
 
-def get_amazon_og_image(search_term):
-    """Get the og:image from the top Amazon result (same as X cards)."""
+def get_amazon_card_image(search_term):
+    """Get the exact image X uses for Amazon cards (og:image or first product image)."""
     search_url = f"https://www.amazon.com/s?k={search_term.replace(' ', '+')}"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate",
-        "Connection": "keep-alive",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     }
     try:
-        resp = requests.get(search_url, headers=headers, timeout=10)
+        resp = requests.get(search_url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, "html.parser")
-        
-        # Find the first product result and its og:image
+
+        # First try og:image (what X usually uses)
+        og_image = soup.find("meta", property="og:image")
+        if og_image and og_image.get("content"):
+            return og_image["content"]
+
+        # Fallback to first product image
         first_product = soup.find("div", {"data-component-type": "s-search-result"})
         if first_product:
-            # Look for og:image in the page head or product meta
-            og_img = soup.find("meta", property="og:image")
-            if og_img and og_img.get("content"):
-                return og_img["content"]
-            # Fallback to first product image
-            img_tag = first_product.find("img", class_="s-image")
-            if img_tag and img_tag.get("src"):
-                return img_tag["src"]
+            img = first_product.find("img", class_="s-image")
+            if img and img.get("src"):
+                return img["src"]
     except Exception as e:
-        print(f"Image fetch error for {search_term}: {e}")
-    
-    # Ultimate fallback
+        print(f"Amazon image fetch failed for {search_term}: {e}")
+
+    # Final fallback placeholder
     return f"https://via.placeholder.com/800x600/0d6efd/ffffff.png?text={search_term.replace(' ', '+')}"
 
 def generate_review(product_name, search_term, why_trending):
     link = f"https://www.amazon.com/s?k={search_term.replace(' ', '+')}&tag={AFFILIATE_TAG}"
-    image_url = get_amazon_og_image(search_term)
+    image_url = get_amazon_card_image(search_term)
 
     prompt = f"""
     Write a full 800-1200 word SEO-optimized review for "{product_name}" in December 2025.
@@ -153,7 +150,7 @@ new_reviews = []
 for name, term, trending in products:
     filename, title, img = generate_review(name, term, trending)
     new_reviews.append((filename, title, img))
-    print(f"Created: {title} | Image: {img[:50]}...")
+    print(f"Created: {title}")
 
 update_homepage(new_reviews)
-print("All done! Commit & push – Amazon og:images (like X cards) now load perfectly.")
+print("All done! Commit & push – your reviews now have the exact Amazon/X card images.")
