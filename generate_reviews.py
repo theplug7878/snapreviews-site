@@ -1,18 +1,3 @@
-#!/usr/bin/env python3
-"""
-generate_reviews.py
-
-Generates product review pages using:
- - GROQ (LLM) for review copy
- - Amazon Product Advertising API (PA-API) v5 for product data
-
-Environment variables required:
- - GROQ_API_KEY
- - PA_ACCESS_KEY
- - PA_SECRET_KEY
- - AFFILIATE_TAG (optional; default 'snapxacc-20')
-"""
-
 import os
 import time
 import json
